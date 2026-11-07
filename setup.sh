@@ -8,6 +8,8 @@ set -euo pipefail
 
 readonly SETTINGS_REPO="SantaVC/Fedora_Settings"
 readonly SETTINGS_DIR="$HOME/Development/Repositories/Fedora_Settings"
+# Kept after the run, so later updates are just "installer apply".
+readonly INSTALLER="$HOME/.local/bin/installer"
 
 die() {
   echo "error: $*" >&2
@@ -17,6 +19,8 @@ die() {
 # 1. Check the machine.
 # shellcheck disable=SC1091
 [[ "$(. /etc/os-release && echo "$ID")" == "fedora" ]] || die "this script only supports Fedora"
+# The released installer is built for amd64 only.
+[[ "$(uname -m)" == "x86_64" ]] || die "only x86_64 is supported, this is $(uname -m)"
 [[ "$(id -u)" != "0" ]] || die "do not run as root, the script calls sudo itself"
 sudo -v || die "sudo must work for this user"
 
@@ -40,17 +44,18 @@ else
 fi
 
 # 5. Get the installer from the latest release, so this machine does not need Go.
+# It lands in a temp dir first, so a failed download keeps the old binary.
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 gh release download --repo "$SETTINGS_REPO" --pattern installer --dir "$tmp" \
   || die "cannot download the installer, does $SETTINGS_REPO have a release?"
-chmod +x "$tmp/installer"
+install -D -m 0755 "$tmp/installer" "$INSTALLER"
 
 # 6. Show what would change, and only change it after a yes. Plan exits non-zero
 # when a step is blocked, which is worth reading but not a reason to stop here.
-"$tmp/installer" plan || true
+"$INSTALLER" plan || true
 echo
 read -rp "Apply these changes? [y/N] " answer
 [[ "$answer" == [yY]* ]] || { echo "Nothing changed."; exit 0; }
 
-"$tmp/installer" apply
+"$INSTALLER" apply
